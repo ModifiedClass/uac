@@ -1,0 +1,50 @@
+{
+  "server":   { "host": "127.0.0.1", "port": 27149 },
+  "jwt":      { "issuer": "uac", "accessTokenTtlSeconds": 3600 },
+  "session":  { "ttlSeconds": 86400, "cookieName": "session_id" },
+  "authCode": { "ttlSeconds": 300 },
+
+  "plugins": {
+    "blacklist": {
+      "enabled": true,
+      "ips": [],
+      "usernames": [],
+      "autoBanThreshold": 5,
+      "autoBanSeconds": 300
+    },
+    "debounce": {
+      "enabled": true,
+      "windowMs": 1500
+    }
+  },
+
+  "clients": [
+    {
+      "clientId": "fastapi-app",
+      "clientSecret": "fastapi-app-secret",
+      "name": "FastAPI 业务应用",
+      "redirectUris": ["http://your-domain.com/callback"]
+    }
+  ],
+
+  "users": [
+    {
+      "userId": "u-0001",
+      "username": "admin",
+      "password": "admin123",
+      "name": "管理员",
+      "phone": "13800000000",
+      "email": "admin@example.com",
+      "roles": ["admin", "user"]
+    },
+    {
+      "userId": "u-0002",
+      "username": "alice",
+      "password": "alice123",
+      "name": "Alice",
+      "phone": "13900000000",
+      "email": "alice@example.com",
+      "roles": ["user"]
+    }
+  ]
+}
