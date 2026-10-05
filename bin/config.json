@@ -1,5 +1,5 @@
 {
-  "server":   { "host": "0.0.0.0", "port": 27149 },
+  "server":   { "host": "127.0.0.1", "port": 27149 },
   "jwt":      { "issuer": "uac", "accessTokenTtlSeconds": 3600 },
   "session":  { "ttlSeconds": 86400, "cookieName": "session_id" },
   "authCode": { "ttlSeconds": 300 },
@@ -23,7 +23,7 @@
       "clientId": "fastapi-app",
       "clientSecret": "fastapi-app-secret",
       "name": "FastAPI 业务应用",
-      "redirectUris": ["http://192.168.2.1/callback"]
+      "redirectUris": ["http://your-domain.com/callback"]
     }
   ],
 

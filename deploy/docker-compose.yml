@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # ==========================================================
+  #  PostgreSQL 16 — 用户 / 客户端存储
+  # ==========================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: uac-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - /opt/uac/data/postgres:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uac-net
+
+  # ==========================================================
+  #  Redis 7 — 授权码 / 会话存储
+  # ==========================================================
+  redis:
+    image: redis:7-alpine
+    container_name: uac-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --requirepass ${REDIS_PASSWORD}
+      --save 900 1
+      --save 300 10
+    volumes:
+      - /opt/uac/data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - uac-net
+
+  # ==========================================================
+  #  Qt 认证中心
+  # ==========================================================
+  auth-center:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: uac-auth-center:latest
+    container_name: uac-auth-center
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      AUTH_HOST: "0.0.0.0"
+      AUTH_PORT: "27149"
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+    volumes:
+      - /opt/uac/logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - uac-net
+
+  # ==========================================================
+  #  Nginx — 反向代理
+  # ==========================================================
+  nginx:
+    image: nginx:alpine
+    container_name: uac-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - /opt/uac/logs/nginx:/var/log/nginx
+    depends_on:
+      - auth-center
+    networks:
+      - uac-net
+
+networks:
+  uac-net:
+    driver: bridge
