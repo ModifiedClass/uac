@@ -72,7 +72,12 @@ DISTFILES += \
     deploy/docker-compose.yml \
     deploy/.env.example \
     deploy/install-docker.sh \
+    deploy/postgres/.env \
+    deploy/postgres/deploy.sh \
+    deploy/postgres/deploy_auth_center.sh \
+    deploy/postgres/deploy_nginx.sh \
     deploy/postgres/deploy_pg.sh \
+    deploy/postgres/deploy_redis.sh \
     deploy/postgres/init.sql \
     deploy/nginx/conf.d/default.conf \
     templates/login.html
