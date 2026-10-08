@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>统一认证中心 · 登录</title>
+  <style>
+    body {
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #f4f6f9; color: #1f2937;
+    }
+    .card {
+      width: 360px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+      padding: 32px; box-shadow: 0 4px 16px rgba(0,0,0,.06);
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: #6b7280; font-size: 13px; margin: 0 0 24px; }
+    label { display: block; font-size: 14px; margin-bottom: 16px; }
+    input[type=text], input[type=password] {
+      width: 100%; margin-top: 6px; padding: 9px 12px; font-size: 14px;
+      border: 1px solid #e2e8f0; border-radius: 8px;
+    }
+    button {
+      width: 100%; padding: 10px; font-size: 15px; color: #fff; background: #2563eb;
+      border: 0; border-radius: 8px; cursor: pointer; margin-top: 8px;
+    }
+    button:hover { background: #1d4ed8; }
+    .error {
+      background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 8px;
+      padding: 10px 12px; font-size: 14px; margin-bottom: 16px;
+    }
+    .hint { color: #9ca3af; font-size: 12px; text-align: center; margin: 20px 0 0; }
+  </style>
+</head>
+<body>
+  <form class="card" method="post" action="/login">
+    <h1>统一认证中心</h1>
+    <p class="sub">Unified Authentication Center (OAuth2 + JWT)</p>
+    <div class="error" {{error_style}}>{{error}}</div>
+    <label>用户名
+      <input type="text" name="username" value="{{username}}" autocomplete="username" required autofocus>
+    </label>
+    <label>密码
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <input type="hidden" name="redirect" value="{{redirect}}">
+    <button type="submit">登 录</button>
+    <p class="hint">示例账号：admin / admin123</p>
+  </form>
+</body>
+</html>

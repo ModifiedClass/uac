@@ -1,0 +1,45 @@
+# uac 认证中心 systemd 服务 (Debian)
+# 安装: cp auth-center.service /etc/systemd/system/
+#       systemctl daemon-reload && systemctl enable --now auth-center
+# 日志: journalctl -u auth-center -f
+
+[Unit]
+Description=uac Unified Authentication Center (Qt6 QHttpServer)
+Documentation=file:/opt/auth-center/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/auth-center
+# JWT 签名密钥必须通过环境变量注入, 禁止写死在配置/代码中
+Environment=JWT_SECRET=REPLACE_WITH_STRONG_RANDOM_SECRET
+Environment=UAC_CONFIG=/opt/auth-center/config.json
+# 可选覆盖: UAC_HOST / UAC_PORT / UAC_SESSION_TTL / UAC_CODE_TTL / UAC_TOKEN_TTL
+ExecStart=/opt/auth-center/auth-center
+
+# 崩溃自动重启
+Restart=on-failure
+RestartSec=2
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# ---- 加固 ----
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# 如需写本地文件(如日志落盘)可放开并创建目录:
+# ReadWritePaths=/var/lib/uac
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+# 日志输出到 journal(程序本身输出 stdout/stderr)
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

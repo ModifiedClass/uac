@@ -1,0 +1,72 @@
+{
+  "comment": "uac 认证中心配置。所有值均可被环境变量覆盖: UAC_HOST / UAC_PORT / JWT_SECRET / UAC_SESSION_TTL / UAC_CODE_TTL / UAC_TOKEN_TTL。生产环境 JWT_SECRET 必须通过环境变量注入。",
+
+  "server": {
+    "host": "127.0.0.1",
+    "port": 27149
+  },
+
+  "security": {
+    "jwt_secret": "",
+    "session_ttl_seconds": 86400,
+    "auth_code_ttl_seconds": 300,
+    "access_token_ttl_seconds": 3600,
+    "template_dir": "templates"
+  },
+
+  "plugins": [
+    {
+      "name": "rate_limit",
+      "enabled": true,
+      "config": {
+        "login_max_failures": 5,
+        "login_window_seconds": 300,
+        "login_lock_seconds": 900,
+        "global_max_per_minute": 600
+      }
+    },
+    {
+      "name": "blacklist",
+      "enabled": true,
+      "config": {
+        "blocked_ips": [],
+        "blocked_usernames": [],
+        "blocked_tokens": []
+      }
+    }
+  ],
+
+  "users": [
+    {
+      "user_id": "u-1001",
+      "username": "admin",
+      "name": "系统管理员",
+      "phone": "13800000001",
+      "email": "admin@example.com",
+      "roles": ["admin", "user"],
+      "password_hash": "sha256$a1b2c3d4e5f60718293a4b5c6d7e8f90$281e66a51f43debfd0ee80c0ebb6491a60a8fd701130f5ff0aad726ba2219964"
+    },
+    {
+      "user_id": "u-1002",
+      "username": "alice",
+      "name": "Alice",
+      "phone": "13800000002",
+      "email": "alice@example.com",
+      "roles": ["user"],
+      "password_hash": "sha256$a1b2c3d4e5f60718293a4b5c6d7e8f90$a6f635be8fb29ef2e5262d178140176e540f096af36e4fbae41fb8b318303366"
+    }
+  ],
+
+  "clients": [
+    {
+      "client_id": "fastapi-app",
+      "client_secret": "fastapi-app-secret",
+      "name": "FastAPI 示例业务",
+      "redirect_uris": [
+        "http://your-domain.com/callback",
+        "http://127.0.0.1:8000/callback",
+        "http://localhost:8000/callback"
+      ]
+    }
+  ]
+}

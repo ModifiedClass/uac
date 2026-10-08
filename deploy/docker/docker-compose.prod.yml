@@ -1,0 +1,32 @@
+# uac 生产附加存储: PostgreSQL(用户/客户端) + Redis(授权码/会话)
+# 用法: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# 注意: 数据库初始化脚本自动挂载执行(db/init.sql);
+#       启用外部存储后, 需在 auth-center 中实现 Postgres*Store / Redis*Store
+#       (接口见 auth-center/src/storage.h) 并通过配置切换。
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: uac-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    networks: [uac-net]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: uac-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: uac
+      POSTGRES_USER: uac
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?请在 .env 中设置 PG_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ../../db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [uac-net]
+
+volumes:
+  redis-data:
+  pg-data:
