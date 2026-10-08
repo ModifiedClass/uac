@@ -137,7 +137,7 @@ distribute_config() {
 # 3. 初始化数据目录（首次）
 # ============================================================
 init_data_dirs() {
-  info "初始化所有节点数据目录 ${PG_DATA_DIR} ..."
+  info "初始化所有节点数据目录 ${PG_DATA_DIR}CONFIG_BASE_DIR ..."
   for NODE_IP in "${NODE_ARRAY[@]}"; do
     info "  -> ${NODE_IP}"
     ssh -p "${SSH_PORT}" -o StrictHostKeyChecking=no "${SSH_USER}@${NODE_IP}" "
@@ -221,11 +221,11 @@ ensure_secret() {
 # 8. 创建 service（单副本）
 # ============================================================
 create_pg_service() {
-  info "创建 service ${PG_SERVICE}（replicas=${REPLICAS}）"
+  info "创建 service ${PG_SERVICE}（replicas=${PG_REPLICAS}）"
   docker service create \
     --name "${PG_SERVICE}" \
     --network "${NETWORK_NAME}" \
-    --replicas "${REPLICAS}" \
+    --replicas "${PG_REPLICAS}" \
     --constraint 'node.hostname==manager1' \
     --mount type=bind,source=${PG_DATA_DIR},destination=/var/lib/postgresql/data \
     --mount type=bind,source=${CONFIG_DIR}/simple-postgresql.conf,destination=/etc/postgresql/postgresql.conf,readonly=true \
@@ -282,7 +282,7 @@ main() {
   create_pg_service
 
   echo
-  info "PG service 部署完成（副本数=${REPLICAS}）"
+  info "PG service 部署完成（副本数=${PG_REPLICAS}）"
   info "查看副本状态: docker service ps ${PG_SERVICE}"
   info "查看服务日志: docker service logs -f ${PG_SERVICE}"
   info "连接数据库  : psql -h <节点IP> -U ${POSTGRES_USER} -d ${POSTGRES_DB}"

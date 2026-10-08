@@ -11,8 +11,8 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[AUTH][INFO]${NC} $*"; }
 error() { echo -e "${RED}[AUTH][ERROR]${NC} $*" >&2; exit 1; }
 
-[ -f .env ] || error "未找到 .env"
-set -a; source .env; set +a
+[ -f .auth.env ] || error "未找到 .auth.env"
+set -a; source .auth.env; set +a
 
 IFS=',' read -ra NODE_ARRAY <<< "${NODES}"
 REPLICAS="${AUTH_REPLICAS:-3}"
@@ -61,11 +61,11 @@ if docker service inspect "${AUTH_SERVICE}" >/dev/null 2>&1; then
 fi
 
 # ---------- 创建 service ----------
-info "创建 service ${AUTH_SERVICE}（replicas=${REPLICAS}）"
+info "创建 service ${AUTH_SERVICE}（replicas=${AUTH_REPLICAS}）"
 docker service create \
   --name "${AUTH_SERVICE}" \
   --network "${NETWORK_NAME}" \
-  --replicas "${REPLICAS}" \
+  --replicas "${AUTH_REPLICAS}" \
   --with-registry-auth \
   --secret source=jwt_secret-uac,target=/run/secrets/jwt_secret \
   --secret source=postgres_password-uac,target=/run/secrets/pg_password \
@@ -85,5 +85,5 @@ docker service create \
   --restart-condition=on-failure --restart-delay=10s --restart-max-attempts=5 \
   "${AUTH_IMAGE}"
 
-info "Auth service 部署完成（副本数=${REPLICAS}）"
+info "Auth service 部署完成（副本数=${AUTH_REPLICAS}）"
 info "查看副本状态: docker service ps ${AUTH_SERVICE}"

@@ -73,11 +73,11 @@ info "创建 secret ${SECRET_NAME}"
 docker secret create "${SECRET_NAME}" "${CONFIG_DIR}/redis_password.txt" >/dev/null
 
 # ---------- 创建 service ----------
-info "创建 service ${REDIS_SERVICE}（replicas=${REPLICAS}）"
+info "创建 service ${REDIS_SERVICE}（replicas=${REDIS_REPLICAS}）"
 docker service create \
   --name "${REDIS_SERVICE}" \
   --network "${NETWORK_NAME}" \
-  --replicas "${REPLICAS}" \
+  --replicas "${REDIS_REPLICAS}" \
   --mount type=bind,source=${REDIS_DATA_DIR},destination=/data \
   --secret source=${SECRET_NAME},target=/run/secrets/redis_password \
   --publish published=6379,target=6379,mode=host \
@@ -87,5 +87,5 @@ docker service create \
   "${REDIS_IMAGE}" \
   sh -c 'exec redis-server --dir /data --appendonly yes --requirepass "$(cat /run/secrets/redis_password)"'
 
-info "Redis service 部署完成（副本数=${REPLICAS}）"
+info "Redis service 部署完成（副本数=${REDIS_REPLICAS}）"
 info "查看副本状态: docker service ps ${REDIS_SERVICE}"

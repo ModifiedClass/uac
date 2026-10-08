@@ -66,20 +66,17 @@ INCLUDEPATH += src
 DISTFILES += \
     README.md \
     config.json \
+    deploy/.env \
     deploy/Dockerfile \
+    deploy/auth.sh \
     deploy/backup.sh \
     deploy/deploy.sh \
     deploy/docker-compose.yml \
-    deploy/.env.example \
-    deploy/install-docker.sh \
-    deploy/postgres/.env \
-    deploy/postgres/deploy.sh \
-    deploy/postgres/deploy_auth_center.sh \
-    deploy/postgres/deploy_nginx.sh \
-    deploy/postgres/deploy_pg.sh \
-    deploy/postgres/deploy_redis.sh \
-    deploy/postgres/init.sql \
-    deploy/nginx/conf.d/default.conf \
+    deploy/nginx.conf \
+    deploy/nginx.sh \
+    deploy/postgres.sh \
+    deploy/postgres.sql \
+    deploy/redis.sh \
     templates/login.html
 
 # ---------------- 编译选项 ----------------
