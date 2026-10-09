@@ -1,8 +1,9 @@
-# uac.pro —— uac 统一认证中心 (Qt C++ / QHttpServer / OAuth2 授权码模式 + JWT)
-# 构建(Release):
-#   qmake6 uac.pro CONFIG+=release
+# uac.pro — uac 统一认证中心 (Qt C++ / QHttpServer / OAuth2 授权码模式 + JWT)
+
+# 构建 (Release):
+#   qmake uac.pro CONFIG+=release
 #   make -j$(nproc)
-# 产物: ./auth-center
+# 产物: ../auth-center
 
 QT += core network httpserver
 QT -= gui
@@ -15,6 +16,9 @@ TARGET = auth-center
 
 DEFINES += QT_DEPRECATED_WARNINGS
 QMAKE_CXXFLAGS += -Wall -Wextra
+
+# ⭐ 添加头文件搜索路径 (新增)
+INCLUDEPATH += src
 
 SOURCES += \
     main.cpp \
@@ -34,7 +38,8 @@ HEADERS += \
     src/storage.h \
     src/util.h
 
-DISTFILES += \
+# 在 IDE 中显示，但不参与编译
+OTHER_FILES += \
     config.json \
     templates/login.html
 

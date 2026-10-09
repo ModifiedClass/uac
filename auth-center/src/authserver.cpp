@@ -19,6 +19,9 @@
 #include <QList>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QHttpServer>
+#include <QHttpServerResponse>
+#include <QTcpServer>
 
 namespace {
 
@@ -210,7 +213,7 @@ bool AuthServer::init(const AppConfig &cfg)
         qInfo().noquote() << "[template] 登录模板:" << tpl.fileName();
     } else {
         qWarning().noquote() << "[template] 无法读取" << tpl.fileName()
-                             << "(" << tpl.errorString() << "), 使用内置模板";
+            << "(" << tpl.errorString() << "), 使用内置模板";
         m_loginTemplate = QByteArray(kBuiltinLoginTemplate);
     }
 
@@ -231,25 +234,22 @@ bool AuthServer::init(const AppConfig &cfg)
                    [this](const QHttpServerRequest &req) { return handleLogout(req); });
     m_server.route("/healthz", QHttpServerRequest::Method::Get,
                    [](const QHttpServerRequest &) {
-                       return QHttpServerResponse(QStringLiteral("application/json"),
-                                                  QByteArrayLiteral("{\"status\":\"ok\"}"),
+                       return QHttpServerResponse(QJsonObject{{"status", "ok"}},
                                                   QHttpServerResponse::StatusCode::Ok);
                    });
 
-    m_server.setMissingHandler([](const QHttpServerRequest &req, QHttpServerResponder &&responder) {
-        Q_UNUSED(req);
-        responder.write(QHttpServerResponse(QStringLiteral("application/json"),
-                                            QByteArrayLiteral("{\"error\":\"not_found\"}"),
-                                            QHttpServerResponse::StatusCode::NotFound));
+    m_server.setMissingHandler(&m_server, [](const QHttpServerRequest &req) {
+        return QHttpServerResponse(QByteArrayLiteral("application/json"), QByteArrayLiteral("{\"error\":\"not_found\"}"), QHttpServerResponse::StatusCode::NotFound);
     });
 
     // 统一安全响应头(与 Nginx 侧安全头形成双层防护)
-    m_server.afterRequest([](QHttpServerResponse &&resp) {
-        resp.setHeader("X-Content-Type-Options", "nosniff");
-        resp.setHeader("X-Frame-Options", "DENY");
-        resp.setHeader("Referrer-Policy", "no-referrer");
-        resp.setHeader("Cache-Control", "no-store");
-        return std::move(resp);
+    m_server.addAfterRequestHandler(&m_server, [](const QHttpServerRequest &, QHttpServerResponse &resp) {
+        auto headers = resp.headers();
+        headers.append(QByteArrayLiteral("X-Content-Type-Options"), QByteArrayLiteral("nosniff"));
+        headers.append(QByteArrayLiteral("X-Frame-Options"),        QByteArrayLiteral("DENY"));
+        headers.append(QByteArrayLiteral("Referrer-Policy"),        QByteArrayLiteral("no-referrer"));
+        headers.append(QByteArrayLiteral("Cache-Control"),          QByteArrayLiteral("no-store"));
+        resp.setHeaders(std::move(headers));
     });
 
     m_cleanupTimer.start(60 * 1000); // 每分钟清理过期会话/授权码
@@ -259,14 +259,25 @@ bool AuthServer::init(const AppConfig &cfg)
 bool AuthServer::start()
 {
     const QHostAddress host(m_cfg.host.isEmpty() ? QStringLiteral("127.0.0.1") : m_cfg.host);
-    // 注: Qt >= 6.7 listen() 返回 bool(实际端口用 serverPort());
-    //     Qt 6.4/6.5 listen() 返回 quint16(0 表示失败), 本行两种 API 均可编译。
-    if (!m_server.listen(host, static_cast<quint16>(m_cfg.port))) {
-        qCritical().noquote() << "[startup] 监听失败:" << m_cfg.host << ":" << m_cfg.port;
+
+    auto *tcpServer = new QTcpServer(this);
+
+    // 1. 在 QTcpServer 上监听端口
+    if (!tcpServer->listen(host, static_cast<quint16>(m_cfg.port))) {
+        qCritical().noquote() << "[startup] TCP监听失败:" << tcpServer->errorString();
+        delete tcpServer;
         return false;
     }
-    qInfo().noquote() << "[startup] 监听成功:" << m_cfg.host << ":" << m_cfg.port
-                      << "(仅本地回环, 对外由 Nginx 反向代理)";
+
+    // 2. 将 QHttpServer 绑定到 QTcpServer
+    if (!m_server.bind(tcpServer)) {
+        qCritical().noquote() << "[startup] HTTP服务绑定失败";
+        delete tcpServer;
+        return false;
+    }
+
+    qInfo().noquote() << "[startup] 监听成功:" << tcpServer->serverPort()
+                      << "(仅本地回环，对外由 Nginx 反向代理)";
     return true;
 }
 
@@ -276,7 +287,7 @@ QString AuthServer::clientIp(const QHttpServerRequest &req) const
 {
     // 部署在 Nginx 之后: 优先 X-Forwarded-For 首项(最靠近真实客户端)。
     // 注意: 服务仅监听本地回环, 仅信任本机 Nginx 注入的转发头; 若直接对外必须移除本逻辑。
-    const QByteArray xff = req.headers().value("X-Forwarded-For");
+    const QByteArray xff = req.headers().value("X-Forwarded-For").toByteArray(); // ★ 修复: 添加 .toByteArray()
     if (!xff.isEmpty()) {
         const auto parts = xff.split(',');
         if (!parts.isEmpty()) {
@@ -285,7 +296,7 @@ QString AuthServer::clientIp(const QHttpServerRequest &req) const
                 return ip;
         }
     }
-    const QByteArray xrip = req.headers().value("X-Real-IP");
+    const QByteArray xrip = req.headers().value("X-Real-IP").toByteArray(); // ★ 修复: 添加 .toByteArray()
     if (!xrip.isEmpty())
         return QString::fromLatin1(xrip);
     return req.remoteAddress().toString();
@@ -293,7 +304,7 @@ QString AuthServer::clientIp(const QHttpServerRequest &req) const
 
 QByteArray AuthServer::cookieValue(const QHttpServerRequest &req, const QByteArray &name) const
 {
-    const QByteArray header = req.headers().value("Cookie");
+    const QByteArray header = req.headers().value("Cookie").toByteArray(); // ★ 修复: 添加 .toByteArray()
     for (const QByteArray &part : header.split(';')) {
         const QByteArray kv = part.trimmed();
         const int eq = kv.indexOf('=');
@@ -348,18 +359,21 @@ QByteArray AuthServer::renderHomePage(const std::optional<UserInfo> &user) const
 
 QHttpServerResponse AuthServer::redirect(const QByteArray &location, const QByteArray &setCookie) const
 {
-    QHttpServerResponse resp(QStringLiteral("text/html"), QByteArray(),
-                             QHttpServerResponse::StatusCode::Found);
-    resp.setHeader("Location", location);
+    QHttpServerResponse resp(QByteArrayLiteral("text/html"), QByteArray(), QHttpServerResponse::StatusCode::Found);
+
+    // ★ 修复: 补上漏掉的 Location 头！否则所有重定向都会失败
+    resp.headers().append(QByteArrayLiteral("Location"), location);
+
     if (!setCookie.isEmpty())
-        resp.setHeader("Set-Cookie", setCookie);
+        resp.headers().append(QByteArrayLiteral("Set-Cookie"), setCookie);
     return resp;
 }
 
 QHttpServerResponse AuthServer::json(const QJsonObject &obj, QHttpServerResponse::StatusCode status) const
 {
-    return QHttpServerResponse(QStringLiteral("application/json"),
-                               QJsonDocument(obj).toJson(QJsonDocument::Compact), status);
+    return QHttpServerResponse(QByteArrayLiteral("application/json"),
+                               QJsonDocument(obj).toJson(QJsonDocument::Compact),
+                               status);
 }
 
 QHttpServerResponse AuthServer::oauthError(const QString &errorCode, const QString &description,
@@ -368,10 +382,10 @@ QHttpServerResponse AuthServer::oauthError(const QString &errorCode, const QStri
     QJsonObject body{
         {QStringLiteral("error"), errorCode},
         {QStringLiteral("error_description"), description},
-    };
+        };
     QHttpServerResponse resp = json(body, QHttpServerResponse::StatusCode(httpStatus));
     if (basicAuth)
-        resp.setHeader("WWW-Authenticate", "Basic realm=\"uac\"");
+        resp.headers().append(QByteArrayLiteral("WWW-Authenticate"), QByteArrayLiteral("Basic realm=\"uac\""));
     return resp;
 }
 
@@ -381,7 +395,7 @@ std::optional<QHttpServerResponse> AuthServer::runPlugins(const RequestContext &
         auto resp = plugin->onRequest(ctx);
         if (resp) {
             qWarning().noquote() << "[plugins] 请求被拦截 plugin=" << plugin->name()
-                                 << " path=" << ctx.path << " ip=" << ctx.ip;
+                << " path=" << ctx.path << " ip=" << ctx.ip;
             return resp;
         }
     }
@@ -399,8 +413,7 @@ QHttpServerResponse AuthServer::handleHome(const QHttpServerRequest &req)
     if (auto blocked = runPlugins(ctx))
         return std::move(*blocked);
 
-    return QHttpServerResponse(QStringLiteral("text/html"), renderHomePage(currentUser(req)),
-                               QHttpServerResponse::StatusCode::Ok);
+    return QHttpServerResponse(QByteArrayLiteral("text/html"), renderHomePage(currentUser(req)), QHttpServerResponse::StatusCode::Ok);
 }
 
 // ---------------- 登录 ----------------
@@ -423,9 +436,7 @@ QHttpServerResponse AuthServer::handleLoginPage(const QHttpServerRequest &req)
         || redirectTarget.startsWith(QStringLiteral("//"))) {
         redirectTarget = QStringLiteral("/"); // 防开放重定向: 仅允许站内相对路径
     }
-    return QHttpServerResponse(QStringLiteral("text/html"),
-                               renderLoginPage(QString(), QString(), redirectTarget),
-                               QHttpServerResponse::StatusCode::Ok);
+    return QHttpServerResponse(QByteArrayLiteral("text/html"), renderLoginPage(QString(), QString(), redirectTarget), QHttpServerResponse::StatusCode::Ok);
 }
 
 QHttpServerResponse AuthServer::handleLoginSubmit(const QHttpServerRequest &req)
@@ -458,7 +469,7 @@ QHttpServerResponse AuthServer::handleLoginSubmit(const QHttpServerRequest &req)
             m_rateLimit->recordLoginFailure(ip);
         // 注意: 日志不输出密码
         qWarning().noquote() << "[auth] 登录失败 username=" << username << " ip=" << ip;
-        return QHttpServerResponse(QStringLiteral("text/html"),
+        return QHttpServerResponse(QByteArrayLiteral("text/html"), // ★ 修复: QStringLiteral -> QByteArrayLiteral
                                    renderLoginPage(QStringLiteral("用户名或密码错误"), username, redirectTarget),
                                    QHttpServerResponse::StatusCode::Unauthorized);
     }
@@ -499,7 +510,7 @@ QHttpServerResponse AuthServer::handleAuthorize(const QHttpServerRequest &req)
     const auto client = m_clients->findById(clientId);
     if (!client) {
         qWarning().noquote() << "[authorize] 未知 client_id=" << clientId << " ip=" << ctx.ip;
-        return QHttpServerResponse(QStringLiteral("text/html"),
+        return QHttpServerResponse(QByteArrayLiteral("text/html"), // ★ 修复: QStringLiteral -> QByteArrayLiteral
                                    QByteArray("<h1>400</h1><p>未知的 client_id</p>"),
                                    QHttpServerResponse::StatusCode::BadRequest);
     }
@@ -507,7 +518,7 @@ QHttpServerResponse AuthServer::handleAuthorize(const QHttpServerRequest &req)
     if (!client->redirectUris.contains(redirectUri)) {
         qWarning().noquote() << "[authorize] redirect_uri 不在白名单:" << redirectUri
                              << " client=" << clientId;
-        return QHttpServerResponse(QStringLiteral("text/html"),
+        return QHttpServerResponse(QByteArrayLiteral("text/html"), // ★ 修复: QStringLiteral -> QByteArrayLiteral
                                    QByteArray("<h1>400</h1><p>redirect_uri 不在客户端白名单中</p>"),
                                    QHttpServerResponse::StatusCode::BadRequest);
     }
@@ -554,7 +565,8 @@ QHttpServerResponse AuthServer::handleToken(const QHttpServerRequest &req)
         return std::move(*blocked);
 
     // RFC 6749 §4.1.3: 必须使用 application/x-www-form-urlencoded
-    const QByteArray contentType = req.headers().value("Content-Type");
+    // ★ 修复: 增加 .toByteArray()
+    const QByteArray contentType = req.headers().value("Content-Type").toByteArray();
     if (!contentType.toLower().startsWith("application/x-www-form-urlencoded")) {
         return oauthError(QStringLiteral("invalid_request"),
                           QStringLiteral("Content-Type 必须为 application/x-www-form-urlencoded"), 400);
@@ -605,31 +617,33 @@ QHttpServerResponse AuthServer::handleToken(const QHttpServerRequest &req)
         {QStringLiteral("roles"), QJsonArray::fromStringList(user->roles)},
         {QStringLiteral("client_id"), clientId},
         {QStringLiteral("scope"), issued->scope},
-    };
+        };
     const QByteArray accessToken = m_jwt->createToken(claims, m_cfg.accessTokenTtlSeconds);
 
     qInfo().noquote() << "[token] 签发访问令牌 client=" << clientId << " user=" << user->userId
                       << " expires_in=" << m_cfg.accessTokenTtlSeconds;
 
     return json(QJsonObject{
-        {QStringLiteral("access_token"), QString::fromLatin1(accessToken)},
-        {QStringLiteral("token_type"), QStringLiteral("Bearer")},
-        {QStringLiteral("expires_in"), m_cfg.accessTokenTtlSeconds},
-        {QStringLiteral("scope"), issued->scope},
-    }, QHttpServerResponse::StatusCode::Ok);
+                    {QStringLiteral("access_token"), QString::fromLatin1(accessToken)},
+                    {QStringLiteral("token_type"), QStringLiteral("Bearer")},
+                    {QStringLiteral("expires_in"), m_cfg.accessTokenTtlSeconds},
+                    {QStringLiteral("scope"), issued->scope},
+                    }, QHttpServerResponse::StatusCode::Ok);
 }
 
 // ---------------- 用户信息端点 ----------------
 
 QHttpServerResponse AuthServer::handleUserInfo(const QHttpServerRequest &req)
 {
-    const QByteArray authz = req.headers().value("Authorization").trimmed();
+    // ★ 修复: 增加 .toByteArray()
+    const QByteArray authz = req.headers().value("Authorization").toByteArray().trimmed();
     if (!authz.startsWith("Bearer ")) {
         QHttpServerResponse resp = json(
             QJsonObject{{QStringLiteral("error"), QStringLiteral("invalid_token")},
                         {QStringLiteral("message"), QStringLiteral("缺少 Bearer 令牌")}},
             QHttpServerResponse::StatusCode::Unauthorized);
-        resp.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+        // ★ 修复: 使用 headers().append 替代已废弃的 setHeader
+        resp.headers().append(QByteArrayLiteral("WWW-Authenticate"), QByteArrayLiteral("Bearer error=\"invalid_token\""));
         return resp;
     }
     const QByteArray token = authz.mid(7).trimmed();
@@ -651,19 +665,20 @@ QHttpServerResponse AuthServer::handleUserInfo(const QHttpServerRequest &req)
             QJsonObject{{QStringLiteral("error"), QStringLiteral("invalid_token")},
                         {QStringLiteral("message"), err}},
             QHttpServerResponse::StatusCode::Unauthorized);
-        resp.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+        // ★ 修复: 使用 headers().append 替代已废弃的 setHeader
+        resp.headers().append(QByteArrayLiteral("WWW-Authenticate"), QByteArrayLiteral("Bearer error=\"invalid_token\""));
         return resp;
     }
 
     return json(QJsonObject{
-        {QStringLiteral("sub"), payload.value(QStringLiteral("sub"))},
-        {QStringLiteral("name"), payload.value(QStringLiteral("name"))},
-        {QStringLiteral("phone"), payload.value(QStringLiteral("phone"))},
-        {QStringLiteral("email"), payload.value(QStringLiteral("email"))},
-        {QStringLiteral("roles"), payload.value(QStringLiteral("roles"))},
-        {QStringLiteral("client_id"), payload.value(QStringLiteral("client_id"))},
-        {QStringLiteral("scope"), payload.value(QStringLiteral("scope"))},
-    }, QHttpServerResponse::StatusCode::Ok);
+                    {QStringLiteral("sub"), payload.value(QStringLiteral("sub"))},
+                    {QStringLiteral("name"), payload.value(QStringLiteral("name"))},
+                    {QStringLiteral("phone"), payload.value(QStringLiteral("phone"))},
+                    {QStringLiteral("email"), payload.value(QStringLiteral("email"))},
+                    {QStringLiteral("roles"), payload.value(QStringLiteral("roles"))},
+                    {QStringLiteral("client_id"), payload.value(QStringLiteral("client_id"))},
+                    {QStringLiteral("scope"), payload.value(QStringLiteral("scope"))},
+                    }, QHttpServerResponse::StatusCode::Ok);
 }
 
 // ---------------- 登出 ----------------

@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMutexLocker>
+#include <QHttpHeaders>
 
 namespace {
 
@@ -13,6 +14,8 @@ qint64 nowSecs()
     return QDateTime::currentSecsSinceEpoch();
 }
 
+// 注意：需要确保文件顶部包含了 #include <utility>
+
 QHttpServerResponse blockResponse(int status, const QString &message, int retryAfterSeconds = -1)
 {
     QJsonObject body{
@@ -20,11 +23,18 @@ QHttpServerResponse blockResponse(int status, const QString &message, int retryA
                                                 : QStringLiteral("forbidden")},
         {QStringLiteral("message"), message},
     };
-    QHttpServerResponse resp(QStringLiteral("application/json"),
+
+    QHttpServerResponse resp(QByteArrayLiteral("application/json"),
                              QJsonDocument(body).toJson(QJsonDocument::Compact),
                              QHttpServerResponse::StatusCode(status));
-    if (retryAfterSeconds > 0)
-        resp.setHeader("Retry-After", QByteArray::number(retryAfterSeconds));
+
+    if (retryAfterSeconds > 0) {
+        // 确保 QHttpHeaders 头文件已包含，此处调用应能通过编译
+        resp.headers().append(QByteArrayLiteral("Retry-After"),
+                           QByteArray::number(retryAfterSeconds));
+    }
+
+    // 移除 std::move，让编译器自动执行移动（或返回值优化）
     return resp;
 }
 
